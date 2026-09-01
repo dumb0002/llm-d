@@ -14,11 +14,12 @@ Run on an NVIDIA H100-80GB-HBM3 OpenShift cluster, one GPU per replica. Every
 metric reported below is defined in [Metric Definitions](#metric-definitions).
 
 > [!NOTE]
-> Figures below are from a **single run per pass**, not an average across
-> repeats, so small differences between columns should not be read as
-> significant. Within each section all three passes used identical workload,
-> model, and autoscaling configuration — only the model-server lifecycle owner
-> differs.
+> Figures below are the **mean of three runs per pass**. Run-to-run variance is
+> still substantial — particularly for the Baseline and Warm columns, where some
+> runs shed requests under load — so small differences between columns should not
+> be read as significant. Within each section all three passes used identical
+> workload, model, and autoscaling configuration — only the model-server
+> lifecycle owner differs.
 
 ## Saturation-Based Autoscaling
 
@@ -54,31 +55,38 @@ trigger queries, metric source, and plugin set are the guide's defaults.
 
 ### Results
 
+Mean of three runs per pass.
+
 | Metric | Baseline | Warm | Hot | Δ% Hot vs Baseline |
 | :------------------------------------- | -------: | -------: | -------: | -----: |
-| Duration (s)                           | 435      | 436      | 437      | +0.5%  |
+| Duration (s)                           | 434.7    | 463.7    | 437.3    | +0.6%  |
 | Total requests                         | 1,320    | 1,320    | 1,320    | —      |
-| P99 TTFT (ms)                          | 102,517.5 | 87,245.2 | 24,263.6 | −76.3% |
-| P99 ITL (ms/tok)                       | 430.6    | 432.8    | 437.8    | +1.7%  |
-| Avg replicas                           | 1.86     | 3.17     | 2.34     | +25.8% |
-| Max replicas                           | 6        | 6        | 3        | −50.0% |
-| Avg KV cache utilization               | 60.9%    | 46.9%    | 52.8%    | −13.3% |
-| Avg queue depth (EPP)                  | 19.9     | 5.1      | 1.1      | −94.5% |
-| Avg flow-control pool saturation (EPP) | 3.93     | 1.75     | 0.76     | −80.7% |
-| Avg flow-control queue (EPP)           | 30.1     | 13.6     | 1.0      | −96.7% |
-| Avg running requests (EPP)             | 38.5     | 32.7     | 19.3     | −49.9% |
-| Avg pod startup (s)                    | 183      | 102      | 4        | −97.8% |
+| P99 TTFT (ms)                          | 101,871.1 | 101,434.8 | 22,840.4 | −77.6% |
+| P99 ITL (ms/tok)                       | 433.5    | 447.6    | 435.0    | +0.3%  |
+| Avg replicas                           | 2.00     | 3.09     | 2.46     | +22.8% |
+| Max replicas                           | 6.0      | 6.0      | 3.3      | −44.4% |
+| Avg KV cache utilization               | 53.8%    | 47.3%    | 52.7%    | −2.1%  |
+| Avg queue depth (EPP)                  | 16.3     | 8.3      | 1.2      | −92.8% |
+| Avg flow-control pool saturation (EPP) | 3.34     | 1.99     | 0.76     | −77.4% |
+| Avg flow-control queue (EPP)           | 31.1     | 24.6     | 1.6      | −95.0% |
+| Avg running requests (EPP)             | 38.2     | 38.3     | 17.9     | −53.2% |
+| Avg pod startup (s)                    | 183.0    | 108.0    | 4.7      | −97.4% |
 | Hot hit rate                           | _n/a_    | 0.0%     | 100.0%   | —      |
 | Warm hit rate                          | _n/a_    | 100.0%   | 0.0%     | —      |
-| Failures                               | 0        | 0        | 0        | —      |
+| Failures                               | 73.3     | 86.0     | 0.0      | −100.0% |
 
 Pod startup is the mechanism behind the rest: 183 s (baseline, cold model load)
-→ 102 s (warm, new vLLM on a live launcher) → 4 s (hot, wake a sleeping vLLM).
-Because scale-up relief arrives ~45× faster in the hot path, queues never build
-and **P99 TTFT falls 76%** — from 102.5 s to 24.3 s. The cost is ~26% more average
+→ 108 s (warm, new vLLM on a live launcher) → 4.7 s (hot, wake a sleeping vLLM).
+Because scale-up relief arrives ~39× faster in the hot path, queues never build
+and **P99 TTFT falls 78%** — from 101.9 s to 22.8 s. The cost is ~23% more average
 replicas: the hot path scales out sooner precisely because it can.
 
-P99 ITL is flat across all three (~431-438 ms/tok), which is expected: once a
+The hot path is also the only one that completed every request in all three
+runs. Baseline and Warm each dropped requests in two of three runs (73 and 86
+failures on average, 0 for hot) — when relief arrives too late, requests time
+out rather than merely waiting longer.
+
+P99 ITL is flat across all three (~434-448 ms/tok), which is expected: once a
 request is being decoded it streams at the same rate regardless of how its
 replica was actuated. The actuation path affects how long a request *waits*,
 not how fast it generates.
@@ -114,33 +122,42 @@ saturation section.
 
 ### Results
 
+Mean of three runs per pass.
+
 | Metric | Baseline | Warm | Hot | Δ% Hot vs Baseline |
 | :------------------------------------- | -------: | -------: | -------: | -----: |
-| Duration (s)                           | 450      | 435      | 434      | −3.6%  |
+| Duration (s)                           | 461.7    | 437.0    | 433.3    | −6.1%  |
 | Total requests                         | 1,320    | 1,320    | 1,320    | —      |
-| P99 TTFT (ms)                          | 142,686.9 | 119,549.8 | 25,889.3 | −81.9% |
-| P99 ITL (ms/tok)                       | 430.7    | 434.2    | 415.8    | −3.5%  |
-| Avg replicas                           | 2.53     | 3.00     | 3.93     | +55.3% |
-| Max replicas                           | 6        | 6        | 6        | —      |
-| Avg KV cache utilization               | 49.8%    | 48.9%    | 31.2%    | −37.3% |
-| Avg queue depth (EPP)                  | 19.9     | 10.5     | 0.3      | −98.5% |
-| Avg flow-control pool saturation (EPP) | 3.20     | 2.34     | 0.51     | −84.1% |
-| Avg flow-control queue (EPP)           | 41.1     | 25.1     | 0.2      | −99.5% |
-| Avg running requests (EPP)             | 48.8     | 36.0     | 13.7     | −71.9% |
-| Avg pod startup (s)                    | 158      | 96       | 7        | −95.6% |
+| P99 TTFT (ms)                          | 119,550.8 | 147,005.3 | 19,453.5 | −83.7% |
+| P99 ITL (ms/tok)                       | 455.7    | 468.1    | 423.3    | −7.1%  |
+| Avg replicas                           | 2.13     | 2.78     | 3.69     | +73.1% |
+| Max replicas                           | 6.0      | 6.0      | 5.3      | −11.1% |
+| Avg KV cache utilization               | 54.0%    | 51.6%    | 34.7%    | −35.7% |
+| Avg queue depth (EPP)                  | 19.4     | 15.1     | 0.2      | −99.0% |
+| Avg flow-control pool saturation (EPP) | 3.86     | 3.23     | 0.47     | −87.8% |
+| Avg flow-control queue (EPP)           | 33.1     | 34.5     | 0.3      | −99.1% |
+| Avg running requests (EPP)             | 42.4     | 42.0     | 13.3     | −68.6% |
+| Avg pod startup (s)                    | 174.7    | 118.3    | 6.7      | −96.2% |
 | Hot hit rate                           | _n/a_    | 0.0%     | 100.0%   | —      |
 | Warm hit rate                          | _n/a_    | 100.0%   | 0.0%     | —      |
-| Failures                               | 0        | 0        | 0        | —      |
+| Failures                               | 124.7    | 162.0    | 0.0      | −100.0% |
 
-The same mechanism holds, more sharply: pod startup 158 s → 96 s → 7 s, and
-**P99 TTFT falls 82%** (142.7 s → 25.9 s). Because a queue-size threshold of `1`
-scales out on the first sign of backlog, the hot path drives the flow-control
-queue almost to zero (41.1 → 0.2) and holds average queue depth at 0.3.
+The same mechanism holds, more sharply: pod startup 174.7 s → 118.3 s → 6.7 s,
+and **P99 TTFT falls 84%** (119.6 s → 19.5 s). Because a queue-size threshold of
+`1` scales out on the first sign of backlog, the hot path drives the flow-control
+queue almost to zero (33.1 → 0.3) and holds average queue depth at 0.2.
 
-That responsiveness costs more capacity than the saturation triggers did: **~55%
-more average replicas** (2.53 → 3.93, versus ~26% under saturation), and KV cache
-utilization drops to 31.2% as load spreads across more replicas. Queue-based
+That responsiveness costs more capacity than the saturation triggers did: **~73%
+more average replicas** (2.13 → 3.69, versus ~23% under saturation), and KV cache
+utilization drops to 34.7% as load spreads across more replicas. Queue-based
 scaling buys lower latency by running warmer.
+
+Failures are also higher here than under saturation triggers: Baseline averaged
+124.7 and Warm 162.0 dropped requests, against 73.3 and 86.0 respectively. The
+Hot path completed all 1,320 requests in every run under both trigger modes.
+Note that Warm's mean P99 TTFT (147.0 s) exceeds Baseline's (119.6 s) — driven by
+runs 2 and 3, where Warm shed the most requests; with three runs and this much
+spread, the Baseline-vs-Warm ordering is not meaningful.
 
 ## Metric Definitions
 
