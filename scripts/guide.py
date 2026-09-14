@@ -182,7 +182,16 @@ def _no_duplicate_keys(loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bo
     seen: dict[object, yaml.Node] = {}
     for key_node, _value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
-        if key in seen:
+        try:
+            duplicate = key in seen
+        except TypeError:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                "unhashable mapping key; YAML mapping keys must be hashable",
+                key_node.start_mark,
+            )
+        if duplicate:
             first_line = seen[key].start_mark.line + 1
             dup_line = key_node.start_mark.line + 1
             raise yaml.constructor.ConstructorError(
@@ -381,6 +390,12 @@ def _check_env(env: Any, f: Findings) -> set[str]:
         return declared
 
     for var, spec in static.items():
+        if not isinstance(var, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", var):
+            f.error(
+                f"env.static.{var}: variable name must be a shell identifier "
+                f"matching [A-Za-z_][A-Za-z0-9_]*"
+            )
+            continue
         declared.add(var)
         if not isinstance(spec, dict):
             if spec is None or isinstance(spec, bool):
